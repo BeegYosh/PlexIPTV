@@ -1,0 +1,20 @@
+[project]
+name = "plexiptv"
+version = "0.1.0"
+description = "Xtream Codes IPTV to Plex Live TV via HDHomeRun emulation"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.27",
+    "httpx>=0.27",
+    "aiosqlite>=0.20",
+    "pyyaml>=6.0",
+    "pydantic>=2.6",
+]
+
+[project.scripts]
+plexiptv = "plexiptv.__main__:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.backends._legacy:_Backend"

@@ -1,0 +1,20 @@
+xtream:
+  server: "http://YOUR_SERVER:8080"
+  username: "YOUR_USERNAME"
+  password: "YOUR_PASSWORD"
+
+tuner:
+  count: 4
+  device_id: ""
+  friendly_name: "PlexIPTV"
+
+server:
+  host: "0.0.0.0"
+  port: 5004
+
+cache:
+  channel_refresh_minutes: 120
+  epg_refresh_minutes: 60
+
+proxy:
+  buffer_size_kb: 512

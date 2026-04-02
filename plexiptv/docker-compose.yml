@@ -1,0 +1,14 @@
+version: "3.8"
+
+services:
+  plexiptv:
+    build: .
+    container_name: plexiptv
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - ./data:/app/data
+    environment:
+      - PLEXIPTV_CONFIG=/app/data/config.yaml
+      - PLEXIPTV_DB=/app/data/plexiptv.db
+      - TZ=America/New_York
