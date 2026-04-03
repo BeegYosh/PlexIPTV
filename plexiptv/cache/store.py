@@ -192,13 +192,69 @@ class CacheStore:
             params,
         )
         await self._db.commit()
+        return await self._renumber_enabled()
 
-        # Reset channel numbers for newly enabled set
+    async def apply_channel_filter(self, names: list[str]) -> int:
+        """Disable all channels, then enable only those whose name matches
+        one of the given names (case-insensitive exact match).
+        Returns the number of enabled channels."""
+        assert self._db
+        if not names:
+            return 0
+
+        # Disable everything first
+        await self._db.execute("UPDATE channels SET enabled=0")
+
+        # Enable exact matches (case-insensitive)
+        conditions = " OR ".join(["LOWER(name) = LOWER(?)" for _ in names])
+        await self._db.execute(
+            f"UPDATE channels SET enabled=1 WHERE {conditions}",
+            names,
+        )
+        await self._db.commit()
+        return await self._renumber_enabled()
+
+    async def apply_combined_filter(
+        self, category_keywords: list[str], channel_names: list[str]
+    ) -> int:
+        """Apply both filters: start with categories, then add specific channels.
+        If only channel_names is set, only those exact channels are enabled.
+        If only category_keywords is set, whole categories are enabled.
+        If both are set, channels matching EITHER filter are enabled."""
+        assert self._db
+
+        # Disable everything first
+        await self._db.execute("UPDATE channels SET enabled=0")
+
+        # Enable by category keywords
+        if category_keywords:
+            conditions = " OR ".join(["c2.category_name LIKE ?" for _ in category_keywords])
+            params = [f"%{kw}%" for kw in category_keywords]
+            await self._db.execute(
+                f"""UPDATE channels SET enabled=1
+                    WHERE category_id IN (
+                        SELECT c2.category_id FROM categories c2
+                        WHERE {conditions}
+                    )""",
+                params,
+            )
+
+        # Enable by exact channel name (additive — doesn't disable category matches)
+        if channel_names:
+            conditions = " OR ".join(["LOWER(name) = LOWER(?)" for _ in channel_names])
+            await self._db.execute(
+                f"UPDATE channels SET enabled=1 WHERE {conditions}",
+                channel_names,
+            )
+
+        await self._db.commit()
+        return await self._renumber_enabled()
+
+    async def _renumber_enabled(self) -> int:
+        """Reset channel numbers for enabled channels and return count."""
         await self._db.execute("UPDATE channels SET channel_number=0 WHERE enabled=1")
         await self._db.commit()
         await self._assign_channel_numbers()
-
-        # Count enabled
         async with self._db.execute("SELECT COUNT(*) FROM channels WHERE enabled=1") as cur:
             row = await cur.fetchone()
             return row[0] if row else 0
