@@ -134,14 +134,16 @@ def create_app() -> FastAPI:
     # Dashboard API
     app.include_router(dashboard_router)
 
-    # Dashboard static files
-    app.mount("/dashboard/static", StaticFiles(directory=str(STATIC_DIR)), name="dashboard-static")
+    # Dashboard static files (optional — app works without them)
+    if STATIC_DIR.exists():
+        app.mount("/dashboard/static", StaticFiles(directory=str(STATIC_DIR)), name="dashboard-static")
 
-    # Dashboard HTML (serve index.html at /dashboard)
-    @app.get("/dashboard", include_in_schema=False)
-    @app.get("/dashboard/", include_in_schema=False)
-    async def dashboard_index():
-        from fastapi.responses import FileResponse
-        return FileResponse(STATIC_DIR / "index.html")
+        @app.get("/dashboard", include_in_schema=False)
+        @app.get("/dashboard/", include_in_schema=False)
+        async def dashboard_index():
+            from fastapi.responses import FileResponse
+            return FileResponse(STATIC_DIR / "index.html")
+    else:
+        logger.warning("Dashboard static dir not found at %s — dashboard disabled", STATIC_DIR)
 
     return app

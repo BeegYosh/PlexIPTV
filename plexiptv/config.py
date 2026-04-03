@@ -47,7 +47,7 @@ def _config_path() -> Path:
     env = os.environ.get("PLEXIPTV_CONFIG")
     if env:
         return Path(env)
-    return Path("/data/config.yaml")
+    return Path("/app/data/config.yaml")
 
 
 def _apply_env_overrides(settings: Settings) -> None:

@@ -1,7 +1,7 @@
 xtream:
-  server: "http://YOUR_SERVER:8080"
-  username: "YOUR_USERNAME"
-  password: "YOUR_PASSWORD"
+  server: "http://example.com:8080"
+  username: ""
+  password: ""
 
 tuner:
   count: 4

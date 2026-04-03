@@ -1,6 +1,12 @@
-__pycache__/
+__pycache__
 *.pyc
-data/
+*.pyo
 *.db
-.git/
+*.sqlite
+.git
 .gitignore
+.env
+*.egg-info
+dist
+build
+data/
