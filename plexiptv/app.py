@@ -31,13 +31,16 @@ STATIC_DIR = next((p for p in _CANDIDATES if p.exists()), _CANDIDATES[0])
 async def _apply_filters(cache: CacheStore, settings: Settings) -> None:
     """Apply category and/or channel name filters."""
     cat_kw = settings.filter.category_keywords
+    cat_ex = settings.filter.category_exclude
     ch_names = settings.filter.channel_names
 
     if cat_kw or ch_names:
-        enabled = await cache.apply_combined_filter(cat_kw, ch_names)
+        enabled = await cache.apply_combined_filter(cat_kw, ch_names, cat_ex)
         parts = []
         if cat_kw:
-            parts.append(f"categories: {', '.join(cat_kw)}")
+            parts.append(f"include: {', '.join(cat_kw)}")
+        if cat_ex:
+            parts.append(f"exclude: {', '.join(cat_ex)}")
         if ch_names:
             parts.append(f"channels: {len(ch_names)} names")
         logger.info("Filter applied: %d channels enabled (%s)", enabled, "; ".join(parts))

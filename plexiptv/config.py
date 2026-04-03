@@ -27,6 +27,7 @@ class ServerConfig(BaseModel):
 
 class FilterConfig(BaseModel):
     category_keywords: list[str] = []  # e.g. ["PPV", "UFC", "SPORTS", "DUAL-AUDIO"]
+    category_exclude: list[str] = []   # e.g. ["WNBA", "CFL", "MLB"] — exclude matching categories
     channel_names: list[str] = []      # exact channel names (case-insensitive match)
 
 
@@ -71,6 +72,7 @@ def _apply_env_overrides(settings: Settings) -> None:
         "CHANNEL_REFRESH_MIN": lambda v: setattr(settings.cache, "channel_refresh_minutes", int(v)),
         "EPG_REFRESH_MIN": lambda v: setattr(settings.cache, "epg_refresh_minutes", int(v)),
         "CATEGORY_FILTER": lambda v: setattr(settings.filter, "category_keywords", [k.strip() for k in v.split(",") if k.strip()]),
+        "CATEGORY_EXCLUDE": lambda v: setattr(settings.filter, "category_exclude", [k.strip() for k in v.split(",") if k.strip()]),
         "CHANNEL_FILTER": lambda v: setattr(settings.filter, "channel_names", [k.strip() for k in v.split("|") if k.strip()]),
     }
     for env_key, setter in mapping.items():

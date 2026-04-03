@@ -215,12 +215,16 @@ class CacheStore:
         return await self._renumber_enabled()
 
     async def apply_combined_filter(
-        self, category_keywords: list[str], channel_names: list[str]
+        self,
+        category_keywords: list[str],
+        channel_names: list[str],
+        category_exclude: list[str] | None = None,
     ) -> int:
-        """Apply both filters: start with categories, then add specific channels.
+        """Apply filters: include by category, add specific channels, then exclude.
         If only channel_names is set, only those exact channels are enabled.
         If only category_keywords is set, whole categories are enabled.
-        If both are set, channels matching EITHER filter are enabled."""
+        If both are set, channels matching EITHER filter are enabled.
+        category_exclude then removes any categories matching those keywords."""
         assert self._db
 
         # Disable everything first
@@ -245,6 +249,19 @@ class CacheStore:
             await self._db.execute(
                 f"UPDATE channels SET enabled=1 WHERE {conditions}",
                 channel_names,
+            )
+
+        # Exclude categories matching exclude keywords
+        if category_exclude:
+            conditions = " OR ".join(["c2.category_name LIKE ?" for _ in category_exclude])
+            params = [f"%{kw}%" for kw in category_exclude]
+            await self._db.execute(
+                f"""UPDATE channels SET enabled=0
+                    WHERE category_id IN (
+                        SELECT c2.category_id FROM categories c2
+                        WHERE {conditions}
+                    )""",
+                params,
             )
 
         await self._db.commit()
