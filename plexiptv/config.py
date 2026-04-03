@@ -25,10 +25,17 @@ class ServerConfig(BaseModel):
     port: int = 5004
 
 
+class CustomChannel(BaseModel):
+    name: str
+    url: str
+    icon: str = ""
+
+
 class FilterConfig(BaseModel):
     category_keywords: list[str] = []  # e.g. ["PPV", "UFC", "SPORTS", "DUAL-AUDIO"]
     category_exclude: list[str] = []   # e.g. ["WNBA", "CFL", "MLB"] — exclude matching categories
     channel_names: list[str] = []      # exact channel names (case-insensitive match)
+    custom_channels: list[CustomChannel] = []  # external/free IPTV streams
 
 
 class CacheConfig(BaseModel):
@@ -57,6 +64,20 @@ def _config_path() -> Path:
     return Path("/app/data/config.yaml")
 
 
+def _parse_custom_channels(value: str) -> list[CustomChannel]:
+    """Parse CUSTOM_CHANNELS env var.  Format: name,url|name,url|name,url,icon"""
+    results = []
+    for entry in value.split("|"):
+        parts = [p.strip() for p in entry.split(",")]
+        if len(parts) >= 2 and parts[0] and parts[1]:
+            results.append(CustomChannel(
+                name=parts[0],
+                url=parts[1],
+                icon=parts[2] if len(parts) > 2 else "",
+            ))
+    return results
+
+
 def _apply_env_overrides(settings: Settings) -> None:
     """Override config values with environment variables when set."""
     mapping = {
@@ -74,6 +95,7 @@ def _apply_env_overrides(settings: Settings) -> None:
         "CATEGORY_FILTER": lambda v: setattr(settings.filter, "category_keywords", [k.strip() for k in v.split(",") if k.strip()]),
         "CATEGORY_EXCLUDE": lambda v: setattr(settings.filter, "category_exclude", [k.strip() for k in v.split(",") if k.strip()]),
         "CHANNEL_FILTER": lambda v: setattr(settings.filter, "channel_names", [k.strip() for k in v.split("|") if k.strip()]),
+        "CUSTOM_CHANNELS": lambda v: setattr(settings.filter, "custom_channels", _parse_custom_channels(v)),
     }
     for env_key, setter in mapping.items():
         val = os.environ.get(env_key)

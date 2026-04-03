@@ -69,7 +69,8 @@ class StreamManager:
         return list(self.active_streams.values())
 
     async def open_stream(
-        self, stream_id: int, channel_name: str, client_ip: str
+        self, stream_id: int, channel_name: str, client_ip: str,
+        override_url: str | None = None,
     ) -> AsyncGenerator[bytes, None]:
         session_id = uuid.uuid4().hex[:8]
 
@@ -93,7 +94,8 @@ class StreamManager:
             session_id, stream_id, channel_name, client_ip,
         )
 
-        base_url = self._xtream.build_stream_url(stream_id)
+        base_url = override_url or self._xtream.build_stream_url(stream_id)
+        is_hls = ".m3u8" in base_url
 
         try:
             attempt = 0

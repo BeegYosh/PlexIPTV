@@ -5,6 +5,7 @@ import os
 
 import aiosqlite
 
+from plexiptv.config import CustomChannel
 from plexiptv.models import Category, Channel, EpgEntry
 
 logger = logging.getLogger(__name__)
@@ -157,6 +158,33 @@ class CacheStore:
 
         return channels, total
 
+    async def upsert_custom_channels(self, custom: list[CustomChannel]) -> None:
+        """Insert custom/external channels into the database.
+        Uses stream_id range 900000+ to avoid clashing with Xtream IDs.
+        Custom channels are always enabled and bypass filters."""
+        assert self._db
+        CUSTOM_BASE_ID = 900000
+        CUSTOM_CATEGORY = "__custom__"
+
+        # Ensure the custom category exists
+        await self._db.execute(
+            "INSERT OR REPLACE INTO categories (category_id, category_name) VALUES (?, ?)",
+            (CUSTOM_CATEGORY, "Custom Channels"),
+        )
+
+        for idx, ch in enumerate(custom):
+            sid = CUSTOM_BASE_ID + idx
+            await self._db.execute(
+                """INSERT INTO channels (stream_id, name, category_id, epg_channel_id, stream_icon, enabled)
+                   VALUES (?, ?, ?, NULL, ?, 1)
+                   ON CONFLICT(stream_id) DO UPDATE SET
+                     name=excluded.name, stream_icon=excluded.stream_icon, enabled=1""",
+                (sid, ch.name, CUSTOM_CATEGORY, ch.icon or None),
+            )
+        await self._db.commit()
+        await self._assign_channel_numbers()
+        logger.info("Loaded %d custom channels (IDs %d-%d)", len(custom), CUSTOM_BASE_ID, CUSTOM_BASE_ID + len(custom) - 1)
+
     async def set_channel_enabled(self, stream_id: int, enabled: bool) -> None:
         assert self._db
         await self._db.execute("UPDATE channels SET enabled=? WHERE stream_id=?", (int(enabled), stream_id))
@@ -227,8 +255,8 @@ class CacheStore:
         category_exclude then removes any categories matching those keywords."""
         assert self._db
 
-        # Disable everything first
-        await self._db.execute("UPDATE channels SET enabled=0")
+        # Disable everything except custom channels
+        await self._db.execute("UPDATE channels SET enabled=0 WHERE category_id != '__custom__'")
 
         # Enable by category keywords
         if category_keywords:

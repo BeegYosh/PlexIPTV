@@ -52,7 +52,9 @@ async def initial_data_sync(xtream: XtreamClient, cache: CacheStore, settings: S
         existing, count = await cache.get_channels(per_page=1)
         if count > 0:
             logger.info("Cache has %d channels, skipping initial sync", count)
-            # Still apply filter in case env changed since last run
+            # Insert custom channels and re-apply filters
+            if settings.filter.custom_channels:
+                await cache.upsert_custom_channels(settings.filter.custom_channels)
             await _apply_filters(cache, settings)
             return
 
@@ -64,6 +66,10 @@ async def initial_data_sync(xtream: XtreamClient, cache: CacheStore, settings: S
         channels = await xtream.get_live_streams()
         await cache.upsert_channels(channels)
         logger.info("Loaded %d channels", len(channels))
+
+        # Insert custom channels (always enabled, bypass filters)
+        if settings.filter.custom_channels:
+            await cache.upsert_custom_channels(settings.filter.custom_channels)
 
         # Apply filters
         await _apply_filters(cache, settings)
@@ -116,6 +122,13 @@ async def lifespan(app: FastAPI):
     app.state.settings = settings
     app.state.local_ip = local_ip
     app.state.start_time = time.time()
+
+    # Build custom channel URL mapping: stream_id → direct URL
+    CUSTOM_BASE_ID = 900000
+    app.state.custom_urls = {
+        CUSTOM_BASE_ID + idx: ch.url
+        for idx, ch in enumerate(settings.filter.custom_channels)
+    }
 
     # Initialize subsystems
     xtream = XtreamClient(settings)

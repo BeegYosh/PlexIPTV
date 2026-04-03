@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timezone
 from fastapi import APIRouter, Request, Response
-from fastapi.responses import StreamingResponse
+from fastapi.responses import RedirectResponse, StreamingResponse
 
 from plexiptv.proxy.stream import TunerBusyError
 
@@ -80,8 +80,19 @@ async def proxy_stream(stream_id: int, request: Request) -> StreamingResponse:
     channel = await cache.get_channel_by_id(stream_id)
     channel_name = channel.name if channel else f"Channel {stream_id}"
 
+    # Check if this is a custom channel with a direct URL
+    custom_urls: dict = getattr(request.app.state, "custom_urls", {})
+    override_url = custom_urls.get(stream_id)
+
+    # HLS streams (.m3u8) — redirect Plex directly, it handles HLS natively
+    if override_url and ".m3u8" in override_url:
+        logger.info("Stream %d (%s) → HLS redirect for %s", stream_id, channel_name, client_ip)
+        return RedirectResponse(url=override_url, status_code=302)
+
     try:
-        generator = stream_manager.open_stream(stream_id, channel_name, client_ip)
+        generator = stream_manager.open_stream(
+            stream_id, channel_name, client_ip, override_url=override_url
+        )
         return StreamingResponse(
             generator,
             media_type="video/mpegts",
