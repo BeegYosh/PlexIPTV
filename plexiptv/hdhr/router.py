@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
-from xml.etree.ElementTree import Element, SubElement, tostring
-
 from fastapi import APIRouter, Request, Response
 from fastapi.responses import StreamingResponse
 
@@ -104,31 +102,54 @@ async def xmltv(request: Request) -> Response:
     cache = request.app.state.cache
     channels, programmes = await cache.get_all_epg_for_xmltv()
 
-    tv = Element("tv")
-    tv.set("generator-info-name", "PlexIPTV")
+    # Build XML manually for better control over encoding and size
+    parts: list[str] = [
+        '<?xml version="1.0" encoding="UTF-8"?>',
+        '<!DOCTYPE tv SYSTEM "xmltv.dtd">',
+        '<tv generator-info-name="PlexIPTV">',
+    ]
 
     for ch in channels:
-        chan_el = SubElement(tv, "channel")
-        chan_el.set("id", ch["id"])
-        dn = SubElement(chan_el, "display-name")
-        dn.text = ch["name"]
+        cid = _xml_escape(ch["id"])
+        name = _xml_escape(ch["name"] or "Unknown")
+        parts.append(f'<channel id="{cid}">')
+        parts.append(f'<display-name>{name}</display-name>')
         if ch.get("icon"):
-            icon_el = SubElement(chan_el, "icon")
-            icon_el.set("src", ch["icon"])
+            parts.append(f'<icon src="{_xml_escape(ch["icon"])}" />')
+        parts.append('</channel>')
 
     for prog in programmes:
-        prog_el = SubElement(tv, "programme")
-        prog_el.set("start", _xmltv_time(prog["start_ts"]))
-        prog_el.set("stop", _xmltv_time(prog["end_ts"]))
-        prog_el.set("channel", prog["channel_id"])
-        title_el = SubElement(prog_el, "title")
-        title_el.text = prog["title"]
-        if prog.get("description"):
-            desc_el = SubElement(prog_el, "desc")
-            desc_el.text = prog["description"]
+        start = _xmltv_time(prog["start_ts"])
+        stop = _xmltv_time(prog["end_ts"])
+        cid = _xml_escape(prog["channel_id"])
+        title = _xml_escape(prog["title"] or "")
+        parts.append(f'<programme start="{start}" stop="{stop}" channel="{cid}">')
+        parts.append(f'<title lang="es">{title}</title>')
+        desc = prog.get("description")
+        if desc:
+            parts.append(f'<desc lang="es">{_xml_escape(desc)}</desc>')
+        parts.append('</programme>')
 
-    xml_bytes = b'<?xml version="1.0" encoding="UTF-8"?>\n' + tostring(tv, encoding="unicode").encode("utf-8")
-    return Response(content=xml_bytes, media_type="application/xml")
+    parts.append('</tv>')
+
+    xml_str = "\n".join(parts)
+    logger.info("XMLTV: %d channels, %d programmes, %d bytes",
+                len(channels), len(programmes), len(xml_str))
+    return Response(
+        content=xml_str.encode("utf-8"),
+        media_type="application/xml; charset=utf-8",
+    )
+
+
+def _xml_escape(text: str) -> str:
+    """Escape XML special characters."""
+    return (
+        text.replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace('"', "&quot;")
+        .replace("'", "&apos;")
+    )
 
 
 def _xmltv_time(ts: int) -> str:
