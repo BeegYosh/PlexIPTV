@@ -90,10 +90,7 @@ async def lifespan(app: FastAPI):
     xtream = XtreamClient(settings)
     app.state.xtream = xtream
 
-    db_path = settings.cache.__dict__.get("db_path", None)
-    import os
-    db_path = os.environ.get("PLEXIPTV_DB", "plexiptv.db")
-    cache = CacheStore(db_path)
+    cache = CacheStore()  # Uses PLEXIPTV_DB env var or default
     await cache.init()
     app.state.cache = cache
 

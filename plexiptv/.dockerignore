@@ -1,0 +1,11 @@
+__pycache__
+*.pyc
+*.pyo
+*.db
+*.sqlite
+.git
+.gitignore
+.env
+*.egg-info
+dist
+build
