@@ -167,6 +167,42 @@ class CacheStore:
         await self._db.execute("UPDATE channels SET enabled=? WHERE category_id=?", (int(enabled), category_id))
         await self._db.commit()
 
+    async def apply_category_filter(self, keywords: list[str]) -> int:
+        """Disable all channels, then enable only those whose category name
+        contains at least one of the given keywords (case-insensitive).
+        Returns the number of enabled channels."""
+        assert self._db
+        if not keywords:
+            return 0
+
+        # Disable everything first
+        await self._db.execute("UPDATE channels SET enabled=0")
+
+        # Build a query that matches any keyword in the category name
+        # Join channels to categories so we can filter by category_name
+        conditions = " OR ".join(["c2.category_name LIKE ?" for _ in keywords])
+        params = [f"%{kw}%" for kw in keywords]
+
+        await self._db.execute(
+            f"""UPDATE channels SET enabled=1
+                WHERE category_id IN (
+                    SELECT c2.category_id FROM categories c2
+                    WHERE {conditions}
+                )""",
+            params,
+        )
+        await self._db.commit()
+
+        # Reset channel numbers for newly enabled set
+        await self._db.execute("UPDATE channels SET channel_number=0 WHERE enabled=1")
+        await self._db.commit()
+        await self._assign_channel_numbers()
+
+        # Count enabled
+        async with self._db.execute("SELECT COUNT(*) FROM channels WHERE enabled=1") as cur:
+            row = await cur.fetchone()
+            return row[0] if row else 0
+
     async def get_channel_by_id(self, stream_id: int) -> Channel | None:
         assert self._db
         async with self._db.execute("SELECT * FROM channels WHERE stream_id=?", (stream_id,)) as cur:

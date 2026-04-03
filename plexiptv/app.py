@@ -28,12 +28,17 @@ _CANDIDATES = [
 STATIC_DIR = next((p for p in _CANDIDATES if p.exists()), _CANDIDATES[0])
 
 
-async def initial_data_sync(xtream: XtreamClient, cache: CacheStore) -> None:
+async def initial_data_sync(xtream: XtreamClient, cache: CacheStore, settings: Settings) -> None:
     """Fetch channels and EPG from Xtream if cache is empty."""
     try:
         existing, count = await cache.get_channels(per_page=1)
         if count > 0:
             logger.info("Cache has %d channels, skipping initial sync", count)
+            # Still apply filter in case env changed since last run
+            if settings.filter.category_keywords:
+                enabled = await cache.apply_category_filter(settings.filter.category_keywords)
+                logger.info("Category filter applied: %d channels enabled (keywords: %s)",
+                            enabled, ", ".join(settings.filter.category_keywords))
             return
 
         logger.info("Cache empty, performing initial data sync...")
@@ -44,6 +49,12 @@ async def initial_data_sync(xtream: XtreamClient, cache: CacheStore) -> None:
         channels = await xtream.get_live_streams()
         await cache.upsert_channels(channels)
         logger.info("Loaded %d channels", len(channels))
+
+        # Apply category filter if configured
+        if settings.filter.category_keywords:
+            enabled = await cache.apply_category_filter(settings.filter.category_keywords)
+            logger.info("Category filter applied: %d channels enabled (keywords: %s)",
+                        enabled, ", ".join(settings.filter.category_keywords))
 
         try:
             epg = await xtream.get_full_epg()
@@ -68,6 +79,11 @@ async def periodic_refresh(xtream: XtreamClient, cache: CacheStore, settings: Se
             channels = await xtream.get_live_streams()
             await cache.upsert_channels(channels)
             logger.info("Refreshed %d categories, %d channels", len(categories), len(channels))
+
+            # Re-apply category filter after refresh
+            if settings.filter.category_keywords:
+                enabled = await cache.apply_category_filter(settings.filter.category_keywords)
+                logger.info("Category filter re-applied: %d channels enabled", enabled)
         except Exception:
             logger.exception("Channel refresh failed")
 
@@ -103,7 +119,7 @@ async def lifespan(app: FastAPI):
     app.state.stream_manager = stream_manager
 
     # Initial data load
-    await initial_data_sync(xtream, cache)
+    await initial_data_sync(xtream, cache, settings)
 
     # Background refresh
     refresh_task = asyncio.create_task(periodic_refresh(xtream, cache, settings))

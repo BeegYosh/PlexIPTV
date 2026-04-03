@@ -25,6 +25,10 @@ class ServerConfig(BaseModel):
     port: int = 5004
 
 
+class FilterConfig(BaseModel):
+    category_keywords: list[str] = []  # e.g. ["PPV", "UFC", "SPORTS", "DUAL-AUDIO"]
+
+
 class CacheConfig(BaseModel):
     channel_refresh_minutes: int = 120
     epg_refresh_minutes: int = 60
@@ -41,6 +45,7 @@ class Settings(BaseModel):
     server: ServerConfig = ServerConfig()
     cache: CacheConfig = CacheConfig()
     proxy: ProxyConfig = ProxyConfig()
+    filter: FilterConfig = FilterConfig()
 
 
 def _config_path() -> Path:
@@ -64,6 +69,7 @@ def _apply_env_overrides(settings: Settings) -> None:
         "BUFFER_SIZE_KB": lambda v: setattr(settings.proxy, "buffer_size_kb", int(v)),
         "CHANNEL_REFRESH_MIN": lambda v: setattr(settings.cache, "channel_refresh_minutes", int(v)),
         "EPG_REFRESH_MIN": lambda v: setattr(settings.cache, "epg_refresh_minutes", int(v)),
+        "CATEGORY_FILTER": lambda v: setattr(settings.filter, "category_keywords", [k.strip() for k in v.split(",") if k.strip()]),
     }
     for env_key, setter in mapping.items():
         val = os.environ.get(env_key)

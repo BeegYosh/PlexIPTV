@@ -16,6 +16,7 @@ services:
       BUFFER_SIZE_KB: "512"
       CHANNEL_REFRESH_MIN: "120"
       EPG_REFRESH_MIN: "60"
+      CATEGORY_FILTER: "PPV,UFC,SPORTS,DUAL-AUDIO"
     volumes:
       - plexiptv-data:/app/data
 
