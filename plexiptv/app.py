@@ -20,7 +20,12 @@ from plexiptv.xtream.client import XtreamClient
 
 logger = logging.getLogger(__name__)
 
-STATIC_DIR = Path(__file__).parent / "dashboard" / "static"
+# Try multiple paths: Docker copies to /app/plexiptv/, but pip installs to site-packages
+_CANDIDATES = [
+    Path("/app/plexiptv/dashboard/static"),
+    Path(__file__).parent / "dashboard" / "static",
+]
+STATIC_DIR = next((p for p in _CANDIDATES if p.exists()), _CANDIDATES[0])
 
 
 async def initial_data_sync(xtream: XtreamClient, cache: CacheStore) -> None:
