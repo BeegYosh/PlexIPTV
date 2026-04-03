@@ -113,8 +113,12 @@ async def xmltv(request: Request) -> Response:
     for ch in channels:
         cid = _xml_escape(ch["id"])
         name = _xml_escape(ch["name"] or "Unknown")
+        num = ch.get("number", 0)
         parts.append(f'<channel id="{cid}">')
         parts.append(f'<display-name>{name}</display-name>')
+        if num:
+            parts.append(f'<display-name>{num}</display-name>')
+            parts.append(f'<lcn>{num}</lcn>')
         if ch.get("icon"):
             parts.append(f'<icon src="{_xml_escape(ch["icon"])}" />')
         parts.append('</channel>')

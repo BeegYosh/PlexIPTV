@@ -258,17 +258,18 @@ class CacheStore:
         """Return ALL enabled channels and EPG entries for XMLTV generation.
 
         Every channel gets a unique XMLTV ID (using stream_id as fallback
-        when epg_channel_id is missing) so Plex can map every lineup entry
-        to a guide channel.
+        when epg_channel_id is missing).  Channels without real EPG data
+        receive placeholder 3-hour blocks covering 7 days so that Plex
+        always shows them in the guide grid.
         """
         assert self._db
         from datetime import datetime, timezone
 
         now = int(datetime.now(timezone.utc).timestamp())
 
-        # ALL enabled channels — use stream_id as XMLTV id when no epg id
-        channels = []
-        epg_id_set: set[str] = set()
+        # ── Enabled channels ─────────────────────────────────────────
+        channels: list[dict] = []
+        xmltv_ids: set[str] = set()
         async with self._db.execute(
             "SELECT stream_id, name, stream_icon, epg_channel_id, channel_number "
             "FROM channels WHERE enabled=1 ORDER BY channel_number, name"
@@ -281,41 +282,50 @@ class CacheStore:
                     "name": row["name"],
                     "icon": row["stream_icon"],
                     "number": row["channel_number"],
-                    "has_epg": row["epg_channel_id"] is not None,
                 })
-                epg_id_set.add(xmltv_id)
+                xmltv_ids.add(xmltv_id)
 
-        # Real EPG entries from now onwards
-        programmes = []
+        # ── Real EPG entries (only for enabled XMLTV IDs) ────────────
+        programmes: list[dict] = []
         channels_with_epg: set[str] = set()
-        async with self._db.execute(
-            "SELECT * FROM epg WHERE end_ts > ? ORDER BY channel_id, start_ts", (now,)
-        ) as cur:
-            async for row in cur:
-                programmes.append({
-                    "channel_id": row["channel_id"],
-                    "title": row["title"],
-                    "description": row["description"],
-                    "start_ts": row["start_ts"],
-                    "end_ts": row["end_ts"],
-                })
-                channels_with_epg.add(row["channel_id"])
+        if xmltv_ids:
+            placeholders = ",".join("?" for _ in xmltv_ids)
+            async with self._db.execute(
+                f"SELECT * FROM epg WHERE end_ts > ? AND channel_id IN ({placeholders}) "
+                "ORDER BY channel_id, start_ts",
+                [now, *xmltv_ids],
+            ) as cur:
+                async for row in cur:
+                    programmes.append({
+                        "channel_id": row["channel_id"],
+                        "title": row["title"],
+                        "description": row["description"],
+                        "start_ts": row["start_ts"],
+                        "end_ts": row["end_ts"],
+                    })
+                    channels_with_epg.add(row["channel_id"])
 
-        # Generate placeholder programmes for channels without real EPG
-        # Plex needs at least one programme per channel to show it in the guide
-        day_seconds = 86400
+        # ── Placeholder programmes for channels without real EPG ─────
+        # Plex needs programme entries to display a channel in the guide.
+        # Use 3-hour blocks across 7 days — short enough for Plex to
+        # render, long enough to avoid thousands of entries.
+        BLOCK_HOURS = 3
+        BLOCK_SEC = BLOCK_HOURS * 3600
+        DAYS_AHEAD = 7
+        # Snap to the start of the current 3-hour block
+        block_start = now - (now % BLOCK_SEC)
+        total_blocks = (DAYS_AHEAD * 24) // BLOCK_HOURS
+
         for ch in channels:
             if ch["id"] not in channels_with_epg:
-                # Create 24h blocks for the next 3 days
-                block_start = now - (now % day_seconds)  # start of today UTC
-                for day in range(3):
-                    ts = block_start + (day * day_seconds)
+                for i in range(total_blocks):
+                    ts = block_start + (i * BLOCK_SEC)
                     programmes.append({
                         "channel_id": ch["id"],
                         "title": ch["name"],
-                        "description": "",
+                        "description": "No programme information available. Guide data will update automatically when events are scheduled.",
                         "start_ts": ts,
-                        "end_ts": ts + day_seconds,
+                        "end_ts": ts + BLOCK_SEC,
                     })
 
         return channels, programmes
