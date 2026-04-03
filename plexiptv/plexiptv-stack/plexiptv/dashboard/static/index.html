@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PlexIPTV Dashboard</title>
+    <link rel="stylesheet" href="/dashboard/static/style.css">
+</head>
+<body>
+    <div class="layout">
+        <nav class="sidebar">
+            <div class="logo">
+                <h1>PlexIPTV</h1>
+                <span class="version">v0.1.0</span>
+            </div>
+            <ul class="nav-links">
+                <li><a href="#" class="nav-link active" data-tab="status">Status</a></li>
+                <li><a href="#" class="nav-link" data-tab="channels">Channels</a></li>
+                <li><a href="#" class="nav-link" data-tab="streams">Active Streams</a></li>
+                <li><a href="#" class="nav-link" data-tab="settings">Settings</a></li>
+            </ul>
+            <div class="sidebar-footer">
+                <div id="server-status" class="status-badge offline">Offline</div>
+            </div>
+        </nav>
+
+        <main class="content">
+            <!-- Status Tab -->
+            <section id="tab-status" class="tab active">
+                <h2>Server Status</h2>
+                <div class="stats-grid" id="stats-grid"></div>
+                <div class="actions-bar">
+                    <button class="btn btn-primary" onclick="forceRefresh()">Refresh Channels & EPG</button>
+                </div>
+                <div class="info-card">
+                    <h3>Plex Setup</h3>
+                    <p>Your HDHomeRun tuner should auto-appear in Plex under <strong>Settings &gt; Live TV &amp; DVR</strong>.</p>
+                    <p>If not found automatically, add it manually:</p>
+                    <ul>
+                        <li>Tuner URL: <code id="tuner-url">-</code></li>
+                        <li>EPG/Guide URL: <code id="epg-url">-</code></li>
+                    </ul>
+                </div>
+            </section>
+
+            <!-- Channels Tab -->
+            <section id="tab-channels" class="tab">
+                <h2>Channels</h2>
+                <div class="toolbar">
+                    <input type="text" id="channel-search" placeholder="Search channels..." class="input">
+                    <select id="category-filter" class="input">
+                        <option value="">All Categories</option>
+                    </select>
+                    <span id="channel-count" class="badge">0 channels</span>
+                </div>
+                <div class="table-wrap">
+                    <table class="table" id="channels-table">
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>Logo</th>
+                                <th>Name</th>
+                                <th>Category</th>
+                                <th>EPG</th>
+                                <th>Enabled</th>
+                            </tr>
+                        </thead>
+                        <tbody id="channels-body"></tbody>
+                    </table>
+                </div>
+                <div class="pagination" id="pagination"></div>
+            </section>
+
+            <!-- Streams Tab -->
+            <section id="tab-streams" class="tab">
+                <h2>Active Streams</h2>
+                <div id="streams-list" class="streams-list">
+                    <p class="empty-state">No active streams</p>
+                </div>
+            </section>
+
+            <!-- Settings Tab -->
+            <section id="tab-settings" class="tab">
+                <h2>Settings</h2>
+                <form id="settings-form" class="settings-form">
+                    <fieldset>
+                        <legend>Xtream Codes</legend>
+                        <label>Server URL<input type="text" name="xtream.server" class="input"></label>
+                        <label>Username<input type="text" name="xtream.username" class="input"></label>
+                        <label>Password<input type="password" name="xtream.password" class="input"></label>
+                    </fieldset>
+                    <fieldset>
+                        <legend>Tuner</legend>
+                        <label>Friendly Name<input type="text" name="tuner.friendly_name" class="input"></label>
+                        <label>Tuner Count<input type="number" name="tuner.count" min="1" max="10" class="input"></label>
+                    </fieldset>
+                    <fieldset>
+                        <legend>Proxy</legend>
+                        <label>Buffer Size (KB)<input type="number" name="proxy.buffer_size_kb" min="64" max="4096" class="input"></label>
+                    </fieldset>
+                    <fieldset>
+                        <legend>Cache</legend>
+                        <label>Channel Refresh (min)<input type="number" name="cache.channel_refresh_minutes" min="5" class="input"></label>
+                        <label>EPG Refresh (min)<input type="number" name="cache.epg_refresh_minutes" min="5" class="input"></label>
+                    </fieldset>
+                    <button type="submit" class="btn btn-primary">Save Settings</button>
+                    <span id="save-status" class="save-status"></span>
+                </form>
+            </section>
+        </main>
+    </div>
+
+    <div id="toast" class="toast hidden"></div>
+
+    <script src="/dashboard/static/app.js"></script>
+</body>
+</html>
