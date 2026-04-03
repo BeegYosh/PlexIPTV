@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
+import asyncio
+
 from fastapi import APIRouter, Request, Response
-from fastapi.responses import RedirectResponse, StreamingResponse
+from fastapi.responses import StreamingResponse
 
 from plexiptv.proxy.stream import TunerBusyError
 
@@ -84,10 +86,18 @@ async def proxy_stream(stream_id: int, request: Request) -> StreamingResponse:
     custom_urls: dict = getattr(request.app.state, "custom_urls", {})
     override_url = custom_urls.get(stream_id)
 
-    # HLS streams (.m3u8) — redirect Plex directly, it handles HLS natively
+    # HLS streams (.m3u8) — use ffmpeg to convert to MPEG-TS for Plex
     if override_url and ".m3u8" in override_url:
-        logger.info("Stream %d (%s) → HLS redirect for %s", stream_id, channel_name, client_ip)
-        return RedirectResponse(url=override_url, status_code=302)
+        logger.info("Stream %d (%s) → HLS via ffmpeg for %s", stream_id, channel_name, client_ip)
+        return StreamingResponse(
+            _hls_to_mpegts(override_url, stream_id),
+            media_type="video/mpegts",
+            headers={
+                "Connection": "close",
+                "Cache-Control": "no-cache, no-store",
+                "X-Accel-Buffering": "no",
+            },
+        )
 
     try:
         generator = stream_manager.open_stream(
@@ -156,6 +166,40 @@ async def xmltv(request: Request) -> Response:
         content=xml_str.encode("utf-8"),
         media_type="application/xml; charset=utf-8",
     )
+
+
+async def _hls_to_mpegts(hls_url: str, stream_id: int):
+    """Use ffmpeg to convert an HLS stream to MPEG-TS for Plex."""
+    cmd = [
+        "ffmpeg",
+        "-hide_banner", "-loglevel", "error",
+        "-reconnect", "1",
+        "-reconnect_streamed", "1",
+        "-reconnect_delay_max", "5",
+        "-i", hls_url,
+        "-c", "copy",           # no re-encoding, just remux
+        "-f", "mpegts",
+        "-mpegts_flags", "resend_headers",
+        "pipe:1",
+    ]
+    process = await asyncio.create_subprocess_exec(
+        *cmd,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    logger.info("ffmpeg started for HLS stream %d (pid %d)", stream_id, process.pid)
+    try:
+        while True:
+            chunk = await process.stdout.read(32768)
+            if not chunk:
+                break
+            yield chunk
+    except (GeneratorExit, asyncio.CancelledError):
+        logger.info("Client disconnected from HLS stream %d", stream_id)
+    finally:
+        process.kill()
+        await process.wait()
+        logger.info("ffmpeg stopped for HLS stream %d", stream_id)
 
 
 def _xml_escape(text: str) -> str:

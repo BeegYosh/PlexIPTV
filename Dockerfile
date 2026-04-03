@@ -7,6 +7,9 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
+# ffmpeg for HLS-to-MPEG-TS transcoding (custom/free IPTV channels)
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg && rm -rf /var/lib/apt/lists/*
+
 # Install dependencies directly (no pip install of the package itself)
 RUN pip install --no-cache-dir \
     "fastapi>=0.110" \
