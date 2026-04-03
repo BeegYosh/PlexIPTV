@@ -7,16 +7,17 @@ services:
     restart: unless-stopped
     network_mode: host
     environment:
-      XTREAM_SERVER: "http://YOUR_SERVER:8080"
-      XTREAM_USERNAME: "YOUR_USERNAME"
-      XTREAM_PASSWORD: "YOUR_PASSWORD"
+      XTREAM_SERVER: "http://your-server:8080"
+      XTREAM_USERNAME: "your-username"
+      XTREAM_PASSWORD: "your-password"
       TUNER_COUNT: "4"
       TUNER_NAME: "PRIME"
       SERVER_PORT: "5004"
       BUFFER_SIZE_KB: "512"
       CHANNEL_REFRESH_MIN: "120"
       EPG_REFRESH_MIN: "60"
-      CATEGORY_FILTER: "PPV,UFC,SPORTS,DUAL-AUDIO"
+      CATEGORY_FILTER: ""
+      CHANNEL_FILTER: ""
     volumes:
       - plexiptv-data:/app/data
 
