@@ -44,8 +44,9 @@ async def lineup(request: Request) -> list[dict]:
     result = []
     for idx, ch in enumerate(channels, start=1):
         number = str(ch.channel_number) if ch.channel_number > 0 else str(idx)
-        # Must match the XMLTV channel id logic in get_all_epg_for_xmltv()
-        xmltv_id = ch.epg_channel_id or str(ch.stream_id)
+        # Always use stream_id as the stable XMLTV identifier —
+        # epg_channel_id from providers can be messy/duplicate
+        xmltv_id = str(ch.stream_id)
         result.append({
             "GuideNumber": number,
             "GuideName": ch.name,
