@@ -219,27 +219,39 @@ class CacheStore:
             ]
 
     async def get_all_epg_for_xmltv(self) -> tuple[list[dict], list[dict]]:
-        """Return channel info and EPG entries for XMLTV generation."""
+        """Return ALL enabled channels and EPG entries for XMLTV generation.
+
+        Every channel gets a unique XMLTV ID (using stream_id as fallback
+        when epg_channel_id is missing) so Plex can map every lineup entry
+        to a guide channel.
+        """
         assert self._db
         from datetime import datetime, timezone
 
         now = int(datetime.now(timezone.utc).timestamp())
 
-        # Channels with EPG IDs
+        # ALL enabled channels — use stream_id as XMLTV id when no epg id
         channels = []
+        epg_id_set: set[str] = set()
         async with self._db.execute(
-            "SELECT stream_id, name, stream_icon, epg_channel_id, channel_number FROM channels WHERE enabled=1 AND epg_channel_id IS NOT NULL"
+            "SELECT stream_id, name, stream_icon, epg_channel_id, channel_number "
+            "FROM channels WHERE enabled=1 ORDER BY channel_number, name"
         ) as cur:
             async for row in cur:
+                xmltv_id = row["epg_channel_id"] or str(row["stream_id"])
                 channels.append({
-                    "id": row["epg_channel_id"],
+                    "id": xmltv_id,
+                    "stream_id": row["stream_id"],
                     "name": row["name"],
                     "icon": row["stream_icon"],
                     "number": row["channel_number"],
+                    "has_epg": row["epg_channel_id"] is not None,
                 })
+                epg_id_set.add(xmltv_id)
 
-        # EPG entries from now onwards
+        # Real EPG entries from now onwards
         programmes = []
+        channels_with_epg: set[str] = set()
         async with self._db.execute(
             "SELECT * FROM epg WHERE end_ts > ? ORDER BY channel_id, start_ts", (now,)
         ) as cur:
@@ -251,5 +263,23 @@ class CacheStore:
                     "start_ts": row["start_ts"],
                     "end_ts": row["end_ts"],
                 })
+                channels_with_epg.add(row["channel_id"])
+
+        # Generate placeholder programmes for channels without real EPG
+        # Plex needs at least one programme per channel to show it in the guide
+        day_seconds = 86400
+        for ch in channels:
+            if ch["id"] not in channels_with_epg:
+                # Create 24h blocks for the next 3 days
+                block_start = now - (now % day_seconds)  # start of today UTC
+                for day in range(3):
+                    ts = block_start + (day * day_seconds)
+                    programmes.append({
+                        "channel_id": ch["id"],
+                        "title": ch["name"],
+                        "description": "",
+                        "start_ts": ts,
+                        "end_ts": ts + day_seconds,
+                    })
 
         return channels, programmes

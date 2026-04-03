@@ -46,6 +46,8 @@ async def lineup(request: Request) -> list[dict]:
     result = []
     for idx, ch in enumerate(channels, start=1):
         number = str(ch.channel_number) if ch.channel_number > 0 else str(idx)
+        # GuideName must match XMLTV channel id for Plex EPG mapping
+        xmltv_id = ch.epg_channel_id or str(ch.stream_id)
         result.append({
             "GuideNumber": number,
             "GuideName": ch.name,
