@@ -14,9 +14,31 @@ from plexiptv.xtream.client import XtreamClient
 
 logger = logging.getLogger(__name__)
 
-CHUNK_SIZE = 65536  # 64KB chunks
-MAX_RECONNECT_ATTEMPTS = 5
-RECONNECT_DELAY_SECONDS = 2
+CHUNK_SIZE = 32768  # 32KB chunks — smaller for faster first-byte delivery
+MAX_RECONNECT_ATTEMPTS = 8
+RECONNECT_DELAY_SECONDS = 1
+
+
+async def _resolve_redirect(client: httpx.AsyncClient, url: str) -> str:
+    """Follow redirects manually to get the final streaming URL.
+
+    Xtream providers often 302-redirect to a token-based URL.
+    httpx's follow_redirects + streaming conflicts because the
+    redirect consumes the response body iterator.  We resolve the
+    final URL with a HEAD/GET first, then stream from that URL.
+    """
+    try:
+        # Use a non-streaming request with follow_redirects to find the final URL
+        resp = await client.send(
+            client.build_request("GET", url),
+            follow_redirects=True,
+            stream=True,
+        )
+        final_url = str(resp.url)
+        await resp.aclose()
+        return final_url
+    except Exception:
+        return url  # Fallback to original URL
 
 
 class StreamManager:
@@ -25,13 +47,19 @@ class StreamManager:
         self._xtream = xtream
         self._semaphore = asyncio.Semaphore(settings.tuner.count)
         self.active_streams: dict[str, ActiveStream] = {}
-        self._client = httpx.AsyncClient(
+        # Redirect resolver — follows redirects but doesn't stream
+        self._resolver = httpx.AsyncClient(
+            timeout=httpx.Timeout(connect=15, read=30, write=10, pool=10),
+            follow_redirects=True,
+        )
+        # Stream client — does NOT follow redirects (we give it the final URL)
+        self._streamer = httpx.AsyncClient(
             timeout=httpx.Timeout(connect=15, read=None, write=10, pool=10),
             limits=httpx.Limits(
                 max_connections=settings.tuner.count + 4,
                 max_keepalive_connections=settings.tuner.count,
             ),
-            follow_redirects=True,
+            follow_redirects=False,
         )
 
     def tuner_available(self) -> bool:
@@ -65,38 +93,31 @@ class StreamManager:
             session_id, stream_id, channel_name, client_ip,
         )
 
-        url = self._xtream.build_stream_url(stream_id)
-        buffer_bytes = self._settings.proxy.buffer_size_kb * 1024
+        base_url = self._xtream.build_stream_url(stream_id)
 
         try:
             attempt = 0
             while attempt <= MAX_RECONNECT_ATTEMPTS:
                 try:
-                    async with self._client.stream("GET", url) as resp:
+                    # Step 1: Resolve redirects to get the final streaming URL
+                    stream_url = await _resolve_redirect(self._resolver, base_url)
+                    if stream_url != base_url:
+                        logger.debug(
+                            "Stream %s: resolved redirect to %s",
+                            session_id, stream_url[:80],
+                        )
+
+                    # Step 2: Stream from the final URL (no redirects)
+                    async with self._streamer.stream("GET", stream_url) as resp:
                         resp.raise_for_status()
 
-                        # Pre-buffer: accumulate before sending first byte
-                        # Only on the very first attempt
-                        if attempt == 0:
-                            pre_buffer = bytearray()
-                            async for chunk in resp.aiter_bytes(CHUNK_SIZE):
-                                pre_buffer.extend(chunk)
-                                if len(pre_buffer) >= buffer_bytes:
-                                    break
-                            if pre_buffer:
-                                stream_info.bytes_sent += len(pre_buffer)
-                                yield bytes(pre_buffer)
-
-                        # Pass-through with keepalive tracking
-                        last_data_time = asyncio.get_event_loop().time()
                         async for chunk in resp.aiter_bytes(CHUNK_SIZE):
                             stream_info.bytes_sent += len(chunk)
-                            last_data_time = asyncio.get_event_loop().time()
                             yield chunk
 
                         # Stream ended cleanly (server closed) — try reconnect
                         logger.info(
-                            "Stream %s: upstream closed connection after %d bytes, reconnecting...",
+                            "Stream %s: upstream closed after %d bytes, reconnecting...",
                             session_id, stream_info.bytes_sent,
                         )
 
@@ -144,7 +165,8 @@ class StreamManager:
             )
 
     async def close(self) -> None:
-        await self._client.aclose()
+        await self._resolver.aclose()
+        await self._streamer.aclose()
 
 
 class TunerBusyError(Exception):
