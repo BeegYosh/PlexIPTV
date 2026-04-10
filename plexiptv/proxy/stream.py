@@ -72,15 +72,24 @@ class StreamManager:
         self, stream_id: int, channel_name: str, client_ip: str,
         override_url: str | None = None,
     ) -> AsyncGenerator[bytes, None]:
+        """Acquire a tuner slot and return a streaming async generator.
+
+        Raises TunerBusyError immediately if all tuners are in use,
+        so callers can catch it before starting the response.
+        """
         session_id = uuid.uuid4().hex[:8]
 
-        if not self._semaphore._value:
+        # Check tuner availability without racing: locked() returns True
+        # when the semaphore value is 0 (no slots free)
+        if self._semaphore.locked():
             logger.warning(
                 "All tuners busy, rejecting stream %d from %s", stream_id, client_ip
             )
             raise TunerBusyError("All tuners are in use")
 
+        # Acquire the slot (will succeed immediately since we checked locked())
         await self._semaphore.acquire()
+
         stream_info = ActiveStream(
             session_id=session_id,
             stream_id=stream_id,
@@ -95,8 +104,15 @@ class StreamManager:
         )
 
         base_url = override_url or self._xtream.build_stream_url(stream_id)
-        is_hls = ".m3u8" in base_url
+        return self._stream_data(session_id, stream_info, base_url)
 
+    async def _stream_data(
+        self, session_id: str, stream_info: ActiveStream, base_url: str,
+    ) -> AsyncGenerator[bytes, None]:
+        """Async generator that streams data with reconnection logic.
+
+        The caller must have already acquired a semaphore slot.
+        """
         try:
             attempt = 0
             while attempt <= MAX_RECONNECT_ATTEMPTS:

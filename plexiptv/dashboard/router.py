@@ -149,12 +149,23 @@ async def force_refresh(request: Request) -> dict:
     xtream = request.app.state.xtream
     cache = request.app.state.cache
 
+    settings: Settings = request.app.state.settings
+
     try:
         categories = await xtream.get_live_categories()
         await cache.upsert_categories(categories)
         channels = await xtream.get_live_streams()
         await cache.upsert_channels(channels)
         logger.info("Force refresh: %d categories, %d channels", len(categories), len(channels))
+
+        # Re-insert custom channels and re-apply filters (same as initial sync)
+        if settings.filter.custom_channels:
+            await cache.upsert_custom_channels(settings.filter.custom_channels)
+        cat_kw = settings.filter.category_keywords
+        cat_ex = settings.filter.category_exclude
+        ch_names = settings.filter.channel_names
+        if cat_kw or ch_names:
+            await cache.apply_combined_filter(cat_kw, ch_names, cat_ex)
 
         try:
             epg = await xtream.get_full_epg()

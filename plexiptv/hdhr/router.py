@@ -100,7 +100,7 @@ async def proxy_stream(stream_id: int, request: Request) -> StreamingResponse:
         )
 
     try:
-        generator = stream_manager.open_stream(
+        generator = await stream_manager.open_stream(
             stream_id, channel_name, client_ip, override_url=override_url
         )
         return StreamingResponse(
